@@ -3,6 +3,7 @@ import {
   cleanCountryCode,
   convertArabicDigits,
   normalizePhone,
+  parsePhoneCell,
   splitPhoneCell,
   toBareDigits
 } from '../src/lib/phone';
@@ -104,6 +105,92 @@ describe('Phone Utilities', () => {
       expect(toBareDigits('+201012345678')).toBe('201012345678');
       expect(toBareDigits('01012345678')).toBe('01012345678');
       expect(toBareDigits(null)).toBe('');
+    });
+  });
+
+  describe('parsePhoneCell', () => {
+    it('handles "+201212121212,+201012345678"', () => {
+      const res = parsePhoneCell('+201212121212,+201012345678');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+      expect(res.skipped).toHaveLength(0);
+    });
+
+    it('handles "+201212121212, +201012345678" with spaces', () => {
+      const res = parsePhoneCell('+201212121212, +201012345678');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+    });
+
+    it('handles "201212121212,201012345678" without plus', () => {
+      const res = parsePhoneCell('201212121212,201012345678');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+    });
+
+    it('handles "01212121212,01012345678" local Egyptian format', () => {
+      const res = parsePhoneCell('01212121212,01012345678');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+    });
+
+    it('handles "1212121212,1012345678" missing leading 0', () => {
+      const res = parsePhoneCell('1212121212,1012345678');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+    });
+
+    it('handles Arabic comma "،", semicolon ";", slash "/", dash " - ", and newline', () => {
+      expect(parsePhoneCell('01212121212، 01012345678').phones).toEqual([
+        '+201212121212',
+        '+201012345678'
+      ]);
+      expect(parsePhoneCell('01212121212; 01012345678').phones).toEqual([
+        '+201212121212',
+        '+201012345678'
+      ]);
+      expect(parsePhoneCell('01212121212 / 01012345678').phones).toEqual([
+        '+201212121212',
+        '+201012345678'
+      ]);
+      expect(parsePhoneCell('01212121212 - 01012345678').phones).toEqual([
+        '+201212121212',
+        '+201012345678'
+      ]);
+      expect(parsePhoneCell("01212121212\n01012345678").phones).toEqual([
+        '+201212121212',
+        '+201012345678'
+      ]);
+    });
+
+    it('handles Arabic-Indic numerals', () => {
+      const res = parsePhoneCell('٠١٢١٢١٢١٢١٢، ٠١٠١٢٣٤٥٦٧٨');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+    });
+
+    it('preserves foreign country codes without prepending +2', () => {
+      const res = parsePhoneCell('+966501234567, +14155552671');
+      expect(res.phones).toEqual(['+966501234567', '+14155552671']);
+    });
+
+    it('collapses duplicates in same cell', () => {
+      const res = parsePhoneCell('01212121212, +201212121212, 01212121212');
+      expect(res.phones).toEqual(['+201212121212']);
+    });
+
+    it('ignores empty segments / trailing commas', () => {
+      const res = parsePhoneCell('01212121212, 01012345678,   ,');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+      expect(res.skipped).toHaveLength(0);
+    });
+
+    it('keeps first valid number as primary and records skipped invalid numbers', () => {
+      const res = parsePhoneCell('bad123, 01212121212, 01012345678, 999');
+      expect(res.phones).toEqual(['+201212121212', '+201012345678']);
+      expect(res.skipped).toEqual([
+        { value: 'bad123', reason: 'رقم هاتف غير صالح' },
+        { value: '999', reason: 'رقم هاتف غير صالح' }
+      ]);
+    });
+
+    it('repairs malformed "+0..." and double country code "+220..."', () => {
+      const res = parsePhoneCell('+01012345678, +2201212121212');
+      expect(res.phones).toEqual(['+201012345678', '+201212121212']);
     });
   });
 });

@@ -1,5 +1,5 @@
 import { AppSettings, BackupPayload, Contact, ImportedFileMeta } from '../store/types';
-import { CURRENT_SCHEMA_VERSION } from './storage';
+import { CURRENT_SCHEMA_VERSION, migrateContactsV1ToV2 } from './storage';
 
 /**
  * Creates a backup payload object from the current state.
@@ -119,10 +119,15 @@ export function validateBackupJson(raw: string): ValidationResult {
         : '20'
   };
 
+  const finalContacts =
+    obj.schemaVersion < 2
+      ? migrateContactsV1ToV2(validContacts, settings.defaultCountryCode)
+      : validContacts;
+
   const payload: BackupPayload = {
-    schemaVersion: obj.schemaVersion,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: typeof obj.exportedAt === 'number' ? obj.exportedAt : Date.now(),
-    contacts: validContacts,
+    contacts: finalContacts,
     filesMeta: validFilesMeta,
     settings
   };

@@ -3,12 +3,14 @@ import { AppSettings, BackupPayload, Contact, ImportedFileMeta, ImportReport } f
 import {
   CURRENT_SCHEMA_VERSION,
   loadLegacyOrder,
+  migrateContactsV1ToV2,
   safeGetItem,
   safeRemoveItem,
   safeSetItem,
   saveLegacyOrder,
   STORAGE_KEYS
 } from '../lib/storage';
+import { normalizePhone } from '../lib/phone';
 import { Verse, VERSES } from '../data/verses';
 import { mergeBackupWithState } from '../lib/backup';
 import { mergeContacts, parseExcelData, removeFileFromContacts } from '../lib/excel';
@@ -135,16 +137,35 @@ function loadPersistedState(): PersistedState {
     };
   }
 
-  return {
+  const defaultCountryCode = saved.settings?.defaultCountryCode || '20';
+  let rawContacts = Array.isArray(saved.contacts) ? saved.contacts : [];
+
+  // Migration from v1 to v2: repair broken phone numbers in contacts
+  const needsMigration = typeof saved.version !== 'number' || saved.version < 2;
+  if (needsMigration && rawContacts.length > 0) {
+    rawContacts = migrateContactsV1ToV2(rawContacts, defaultCountryCode);
+  }
+
+  let activeContactPhone = saved.activeContactPhone || null;
+  let activeContactId = saved.activeContactId || null;
+
+  if (activeContactPhone) {
+    activeContactPhone = normalizePhone(activeContactPhone, defaultCountryCode) || activeContactPhone;
+  }
+  if (activeContactId) {
+    activeContactId = normalizePhone(activeContactId, defaultCountryCode) || activeContactId;
+  }
+
+  const result: PersistedState = {
     version: CURRENT_SCHEMA_VERSION,
-    contacts: Array.isArray(saved.contacts) ? saved.contacts : [],
+    contacts: rawContacts,
     filesMeta: Array.isArray(saved.filesMeta) ? saved.filesMeta : [],
     settings: {
       whatsappMode: saved.settings?.whatsappMode || 'auto',
-      defaultCountryCode: saved.settings?.defaultCountryCode || '20'
+      defaultCountryCode
     },
-    activeContactId: saved.activeContactId || null,
-    activeContactPhone: saved.activeContactPhone || null,
+    activeContactId,
+    activeContactPhone,
     order: Array.isArray(saved.order) && saved.order.length === VERSES.length ? saved.order : order,
     tabVerses: {
       random: saved.tabVerses?.random || null,
@@ -152,6 +173,12 @@ function loadPersistedState(): PersistedState {
       custom: saved.tabVerses?.custom || null
     }
   };
+
+  if (needsMigration) {
+    persistState(result);
+  }
+
+  return result;
 }
 
 function persistState(state: PersistedState): void {

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { splitPhoneCell, normalizePhone } from './phone';
+import { parsePhoneCell, normalizePhone } from './phone';
 import { parseBirthday } from './birthday';
 import { Contact, ImportReport, ImportRowError } from '../store/types';
 
@@ -91,21 +91,9 @@ export function parseExcelData(
       continue;
     }
 
-    // Process phone numbers
-    const phoneCandidates = splitPhoneCell(rawPhone);
-    const validPhones: string[] = [];
-    const invalidPhones: string[] = [];
-
-    for (const cand of phoneCandidates) {
-      const normalized = normalizePhone(cand, defaultCountryCode);
-      if (normalized) {
-        if (!validPhones.includes(normalized)) {
-          validPhones.push(normalized);
-        }
-      } else {
-        invalidPhones.push(cand);
-      }
-    }
+    // Process phone numbers using the single unified cell parser
+    const { phones: validPhones, skipped } = parsePhoneCell(rawPhone, defaultCountryCode);
+    const invalidPhones = skipped.map((s) => s.value);
 
     // Must have at least one valid phone
     if (validPhones.length === 0) {
@@ -183,7 +171,8 @@ export function mergeContacts(
 } {
   const contactsMap = new Map<string, Contact>();
   existingContacts.forEach((c) => {
-    contactsMap.set(c.id, { ...c });
+    const normalizedKey = normalizePhone(c.id) || c.id;
+    contactsMap.set(normalizedKey, { ...c, id: normalizedKey });
   });
 
   let addedCount = 0;
@@ -196,9 +185,15 @@ export function mergeContacts(
     if (existing) {
       // Update contact: merge phones, update name and birthday, union sources, preserve lastContactAt!
       const mergedPhones = [primaryPhone];
-      for (const p of [...row.phones.slice(1), ...existing.phones.slice(1)]) {
+      for (const p of row.phones.slice(1)) {
         if (!mergedPhones.includes(p)) {
           mergedPhones.push(p);
+        }
+      }
+      for (const p of existing.phones.slice(1)) {
+        const norm = normalizePhone(p) || p;
+        if (!mergedPhones.includes(norm)) {
+          mergedPhones.push(norm);
         }
       }
 
