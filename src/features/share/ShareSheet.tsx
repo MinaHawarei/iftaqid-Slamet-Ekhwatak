@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Verse } from '../../data/verses';
 import { useAppStore } from '../../store/useAppStore';
 import { CopyIcon, WaIcon } from '../../components/Icons';
 import { buildMessage, buildWhatsAppUrl, DEFAULT_GREETING, openWhatsApp } from '../../lib/whatsapp';
 import { renderCardImage } from '../../lib/cardImage';
 import { normalizePhone } from '../../lib/phone';
+import { VERSES } from '../../data/verses';
 
 interface ShareSheetProps {
-  verse: Verse | null;
   isOpen: boolean;
   onClose: () => void;
   initialRecipientName?: string;
@@ -16,7 +15,6 @@ interface ShareSheetProps {
 }
 
 export const ShareSheet: React.FC<ShareSheetProps> = ({
-  verse,
   isOpen,
   onClose,
   initialRecipientName = '',
@@ -26,6 +24,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const settings = useAppStore((s) => s.settings);
   const showToast = useAppStore((s) => s.showToast);
   const recordContactActivity = useAppStore((s) => s.recordContactActivity);
+  const activeVerse = useAppStore((s) => s.getActiveVerse()) || VERSES[0];
 
   const [recipient, setRecipient] = useState(initialRecipientName);
   const [greeting, setGreeting] = useState(DEFAULT_GREETING);
@@ -37,19 +36,10 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenRef = useRef<number>(0);
 
-  // Initialize or update fields when opened or initial props change
-  useEffect(() => {
-    if (isOpen) {
-      setRecipient(initialRecipientName);
-      setPhone(initialPhone);
-      setGreeting(DEFAULT_GREETING);
-    }
-  }, [isOpen, initialRecipientName, initialPhone]);
-
-  // Generate preview image
-  const updatePreview = async (v: Verse | null, rec: string, greet: string) => {
-    if (!v) return;
+  // Generate preview image for a specific verse
+  const updatePreview = async (v = useAppStore.getState().getActiveVerse() || VERSES[0], rec = recipient, greet = greeting) => {
     const token = ++tokenRef.current;
+    previewBlobRef.current = null;
     setIsGenerating(true);
 
     try {
@@ -73,18 +63,31 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     }
   };
 
+  // When sheet opens or active verse changes, immediately reset inputs & preview
   useEffect(() => {
-    if (!isOpen || !verse) return;
+    if (isOpen) {
+      setRecipient(initialRecipientName);
+      setPhone(initialPhone);
+      setGreeting(DEFAULT_GREETING);
+      previewBlobRef.current = null;
+      updatePreview(activeVerse, initialRecipientName, DEFAULT_GREETING);
+    }
+  }, [isOpen, initialRecipientName, initialPhone, activeVerse]);
+
+  // Debounced preview update when typing in recipient or greeting fields
+  useEffect(() => {
+    if (!isOpen) return;
     if (timerRef.current) clearTimeout(timerRef.current);
 
     timerRef.current = setTimeout(() => {
-      updatePreview(verse, recipient, greeting);
+      const currentVerse = useAppStore.getState().getActiveVerse() || VERSES[0];
+      updatePreview(currentVerse, recipient, greeting);
     }, 300);
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [verse, recipient, greeting, isOpen]);
+  }, [recipient, greeting]);
 
   // Clean up preview object URL on unmount
   useEffect(() => {
@@ -93,7 +96,7 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     };
   }, [previewUrl]);
 
-  if (!isOpen || !verse) return null;
+  if (!isOpen) return null;
 
   const getCleanPhone = (): string | false => {
     const trimmed = phone.trim();
@@ -110,7 +113,9 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     const validPhone = getCleanPhone();
     if (validPhone === false) return;
 
-    const message = buildMessage(verse, recipient, greeting);
+    // Single source of truth: read at the exact time of clicking send
+    const currentVerse = useAppStore.getState().getActiveVerse() || VERSES[0];
+    const message = buildMessage(currentVerse, recipient, greeting);
     const { url, isAppTarget } = buildWhatsAppUrl(
       validPhone,
       message,
@@ -144,10 +149,20 @@ export const ShareSheet: React.FC<ShareSheetProps> = ({
     const validPhone = getCleanPhone();
     if (validPhone === false) return;
 
+    // Single source of truth: read at the exact time of clicking send
+    const currentVerse = useAppStore.getState().getActiveVerse() || VERSES[0];
+
+    // Flush any pending text input debounce
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      previewBlobRef.current = await renderCardImage(currentVerse, recipient, greeting);
+    }
+
     let blob = previewBlobRef.current;
     if (!blob) {
       showToast('ثواني والصورة تجهز');
-      blob = await renderCardImage(verse, recipient, greeting);
+      blob = await renderCardImage(currentVerse, recipient, greeting);
       if (!blob) return;
       previewBlobRef.current = blob;
     }

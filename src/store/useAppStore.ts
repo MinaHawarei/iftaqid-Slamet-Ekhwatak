@@ -9,10 +9,16 @@ import {
   saveLegacyOrder,
   STORAGE_KEYS
 } from '../lib/storage';
-import { VERSES } from '../data/verses';
+import { Verse, VERSES } from '../data/verses';
 import { mergeBackupWithState } from '../lib/backup';
 import { mergeContacts, parseExcelData, removeFileFromContacts } from '../lib/excel';
 import { sortQueue } from '../lib/queue';
+
+export interface TabVerses {
+  random: Verse | null;
+  number: Verse | null;
+  custom: Verse | null;
+}
 
 interface PersistedState {
   version: number;
@@ -22,6 +28,7 @@ interface PersistedState {
   activeContactId: string | null;
   activeContactPhone: string | null;
   order: number[];
+  tabVerses: TabVerses;
 }
 
 interface UndoSnapshot {
@@ -38,12 +45,14 @@ export interface AppState {
   activeContactId: string | null;
   activeContactPhone: string | null;
   order: number[];
+  tabVerses: TabVerses;
 
   // Ephemeral state
   seenNumbers: Set<number>;
   activeTab: 'random' | 'number' | 'custom';
   isConfigOpen: boolean;
   isQueueOpen: boolean;
+  isShareOpen: boolean;
   activeReport: ImportReport | null;
   toast: { text: string; id: number } | null;
   undoSnapshot: UndoSnapshot | null;
@@ -52,8 +61,13 @@ export interface AppState {
   setActiveTab: (tab: 'random' | 'number' | 'custom') => void;
   setIsConfigOpen: (open: boolean) => void;
   setIsQueueOpen: (open: boolean) => void;
+  setIsShareOpen: (open: boolean) => void;
   setActiveReport: (report: ImportReport | null) => void;
   showToast: (text: string) => void;
+
+  // Verses
+  setTabVerse: (tab: 'random' | 'number' | 'custom', verse: Verse | null) => void;
+  getActiveVerse: () => Verse | null;
 
   // Contacts & Queue
   openVisit: (contactId: string) => void;
@@ -102,6 +116,12 @@ function loadPersistedState(): PersistedState {
     defaultCountryCode: '20'
   };
 
+  const defaultTabVerses: TabVerses = {
+    random: null,
+    number: null,
+    custom: null
+  };
+
   if (!saved) {
     return {
       version: CURRENT_SCHEMA_VERSION,
@@ -110,11 +130,11 @@ function loadPersistedState(): PersistedState {
       settings: defaultSettings,
       activeContactId: null,
       activeContactPhone: null,
-      order
+      order,
+      tabVerses: defaultTabVerses
     };
   }
 
-  // Schema migrations if needed in future
   return {
     version: CURRENT_SCHEMA_VERSION,
     contacts: Array.isArray(saved.contacts) ? saved.contacts : [],
@@ -125,7 +145,12 @@ function loadPersistedState(): PersistedState {
     },
     activeContactId: saved.activeContactId || null,
     activeContactPhone: saved.activeContactPhone || null,
-    order: Array.isArray(saved.order) && saved.order.length === VERSES.length ? saved.order : order
+    order: Array.isArray(saved.order) && saved.order.length === VERSES.length ? saved.order : order,
+    tabVerses: {
+      random: saved.tabVerses?.random || null,
+      number: saved.tabVerses?.number || null,
+      custom: saved.tabVerses?.custom || null
+    }
   };
 }
 
@@ -134,6 +159,19 @@ function persistState(state: PersistedState): void {
   if (state.order) {
     saveLegacyOrder(state.order);
   }
+}
+
+function saveAppState(s: AppState): void {
+  persistState({
+    version: CURRENT_SCHEMA_VERSION,
+    contacts: s.contacts,
+    filesMeta: s.filesMeta,
+    settings: s.settings,
+    activeContactId: s.activeContactId,
+    activeContactPhone: s.activeContactPhone,
+    order: s.order,
+    tabVerses: s.tabVerses
+  });
 }
 
 const initial = loadPersistedState();
@@ -146,12 +184,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeContactId: initial.activeContactId,
   activeContactPhone: initial.activeContactPhone,
   order: initial.order,
+  tabVerses: initial.tabVerses,
 
   // Ephemeral state
   seenNumbers: new Set<number>(),
   activeTab: 'random',
   isConfigOpen: false,
   isQueueOpen: false,
+  isShareOpen: false,
   activeReport: null,
   toast: null,
   undoSnapshot: null,
@@ -159,10 +199,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   setIsConfigOpen: (open) => set({ isConfigOpen: open }),
   setIsQueueOpen: (open) => set({ isQueueOpen: open }),
+  setIsShareOpen: (open) => set({ isShareOpen: open }),
   setActiveReport: (report) => set({ activeReport: report }),
 
   showToast: (text) => {
     set({ toast: { text, id: Date.now() } });
+  },
+
+  setTabVerse: (tab, verse) => {
+    const updated = {
+      ...get().tabVerses,
+      [tab]: verse
+    };
+    set({ tabVerses: updated });
+    saveAppState(get());
+  },
+
+  getActiveVerse: () => {
+    const s = get();
+    return s.tabVerses[s.activeTab];
   },
 
   openVisit: (contactId) => {
@@ -174,16 +229,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeContactPhone: phone,
       isQueueOpen: false
     });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: s.contacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: contactId,
-      activeContactPhone: phone,
-      order: s.order
-    });
+    saveAppState(get());
   },
 
   closeVisit: () => {
@@ -192,30 +238,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeContactPhone: null,
       isQueueOpen: true
     });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: s.contacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: null,
-      activeContactPhone: null,
-      order: s.order
-    });
+    saveAppState(get());
   },
 
   setActiveContactPhone: (phone) => {
     set({ activeContactPhone: phone });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: s.contacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: phone,
-      order: s.order
-    });
+    saveAppState(get());
   },
 
   goToNextInQueue: () => {
@@ -259,16 +287,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       undoSnapshot: snapshot
     });
 
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: updatedContacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: s.order
-    });
+    saveAppState(get());
   },
 
   undoLastContact: () => {
@@ -286,16 +305,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       undoSnapshot: null
     });
 
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: updatedContacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: s.order
-    });
+    saveAppState(get());
 
     get().showToast('تم التراجع عن تسجيل الافتقاد');
   },
@@ -312,16 +322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
 
     set({ contacts: updatedContacts });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: updatedContacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: s.order
-    });
+    saveAppState(get());
   },
 
   importExcelFile: async (file: File) => {
@@ -352,16 +353,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeReport: report
     });
 
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: updatedContacts,
-      filesMeta: newFilesMeta,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: s.order
-    });
+    saveAppState(get());
 
     return report;
   },
@@ -385,16 +377,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeContactPhone: activePhone
     });
 
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: updatedContacts,
-      filesMeta: updatedFiles,
-      settings: s.settings,
-      activeContactId: activeId,
-      activeContactPhone: activePhone,
-      order: s.order
-    });
+    saveAppState(get());
 
     get().showToast('تم حذف الملف وجهات الاتصال الخاصة به');
   },
@@ -402,16 +385,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (newSettings) => {
     const merged = { ...get().settings, ...newSettings };
     set({ settings: merged });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: s.contacts,
-      filesMeta: s.filesMeta,
-      settings: merged,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: s.order
-    });
+    saveAppState(get());
   },
 
   clearAllData: () => {
@@ -423,7 +397,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeContactPhone: null,
       isQueueOpen: false,
       isConfigOpen: false,
-      undoSnapshot: null
+      isShareOpen: false,
+      undoSnapshot: null,
+      tabVerses: { random: null, number: null, custom: null }
     });
     get().showToast('تم مسح جميع البيانات بنجاح');
   },
@@ -436,16 +412,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeContactId: null,
       activeContactPhone: null
     });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: backup.contacts,
-      filesMeta: backup.filesMeta,
-      settings: backup.settings,
-      activeContactId: null,
-      activeContactPhone: null,
-      order: s.order
-    });
+    saveAppState(get());
     get().showToast(`تم استعادة النسخة الاحتياطية (${backup.contacts.length} جهة اتصال)`);
   },
 
@@ -459,16 +426,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       contacts: mergedContacts,
       filesMeta: mergedFiles
     });
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: mergedContacts,
-      filesMeta: mergedFiles,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: s.order
-    });
+    saveAppState(get());
     get().showToast(`تم دمج النسخة الاحتياطية (${mergedContacts.length} إجمالي جهات الاتصال)`);
   },
 
@@ -484,17 +442,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ order: curr, seenNumbers: new Set<number>() });
     saveLegacyOrder(curr);
-
-    const s = get();
-    persistState({
-      version: CURRENT_SCHEMA_VERSION,
-      contacts: s.contacts,
-      filesMeta: s.filesMeta,
-      settings: s.settings,
-      activeContactId: s.activeContactId,
-      activeContactPhone: s.activeContactPhone,
-      order: curr
-    });
+    saveAppState(get());
   },
 
   markNumberSeen: (index: number) => {
@@ -503,4 +451,3 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ seenNumbers: newSeen });
   }
 }));
-

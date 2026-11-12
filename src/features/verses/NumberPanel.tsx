@@ -1,22 +1,20 @@
 import React, { useState } from 'react';
 import { CardComponent } from '../../components/CardComponent';
 import { CloseIcon, CopyIcon, DiceIcon, WaIcon } from '../../components/Icons';
-import { Verse, VERSES } from '../../data/verses';
+import { VERSES } from '../../data/verses';
 import { buildMessage } from '../../lib/whatsapp';
 import { useAppStore } from '../../store/useAppStore';
 
-interface NumberPanelProps {
-  onOpenShare: (verse: Verse) => void;
-}
-
-export const NumberPanel: React.FC<NumberPanelProps> = ({ onOpenShare }) => {
+export const NumberPanel: React.FC = () => {
   const order = useAppStore((s) => s.order);
   const seenNumbers = useAppStore((s) => s.seenNumbers);
   const markNumberSeen = useAppStore((s) => s.markNumberSeen);
   const shuffleNumbers = useAppStore((s) => s.shuffleNumbers);
   const showToast = useAppStore((s) => s.showToast);
+  const activeModalVerse = useAppStore((s) => s.tabVerses.number);
+  const setTabVerse = useAppStore((s) => s.setTabVerse);
+  const setIsShareOpen = useAppStore((s) => s.setIsShareOpen);
 
-  const [activeModalVerse, setActiveModalVerse] = useState<Verse | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalFlipped, setModalFlipped] = useState(false);
   const [isShuffling, setIsShuffling] = useState(false);
@@ -25,7 +23,10 @@ export const NumberPanel: React.FC<NumberPanelProps> = ({ onOpenShare }) => {
     markNumberSeen(index);
     const verseIdx = order[index];
     const verse = VERSES[verseIdx];
-    setActiveModalVerse(verse);
+
+    // Single source of truth: commit selected verse synchronously before animation
+    setTabVerse('number', verse);
+
     setModalFlipped(false);
     setIsModalOpen(true);
 
@@ -36,7 +37,6 @@ export const NumberPanel: React.FC<NumberPanelProps> = ({ onOpenShare }) => {
   const closeModal = () => {
     setIsModalOpen(false);
     setModalFlipped(false);
-    setActiveModalVerse(null);
   };
 
   const handleShuffle = async () => {
@@ -48,8 +48,9 @@ export const NumberPanel: React.FC<NumberPanelProps> = ({ onOpenShare }) => {
   };
 
   const handleCopy = async () => {
-    if (!activeModalVerse) return;
-    const text = buildMessage(activeModalVerse);
+    const v = useAppStore.getState().tabVerses.number;
+    if (!v) return;
+    const text = buildMessage(v);
     try {
       await navigator.clipboard.writeText(text);
       showToast('تم النسخ');
@@ -114,7 +115,7 @@ export const NumberPanel: React.FC<NumberPanelProps> = ({ onOpenShare }) => {
               className="btn wa"
               onClick={() => {
                 closeModal();
-                onOpenShare(activeModalVerse);
+                setIsShareOpen(true);
               }}
             >
               <WaIcon />
@@ -134,4 +135,3 @@ export const NumberPanel: React.FC<NumberPanelProps> = ({ onOpenShare }) => {
     </section>
   );
 };
-

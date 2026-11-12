@@ -4,15 +4,12 @@ import { CakeIcon, CopyIcon, PhoneIcon, WaIcon } from '../../components/Icons';
 import { formatRelativeLastContact, sortQueue } from '../../lib/queue';
 import { formatBirthdayDisplay, isUpcomingBirthday } from '../../lib/birthday';
 import { isMobileDevice } from '../../lib/device';
-import { Verse } from '../../data/verses';
 
 interface VisitViewProps {
-  onOpenShareSheetForActiveContact: (verse?: Verse | null) => void;
+  onOpenShareSheetForActiveContact?: () => void;
 }
 
-export const VisitView: React.FC<VisitViewProps> = ({
-  onOpenShareSheetForActiveContact
-}) => {
+export const VisitView: React.FC<VisitViewProps> = () => {
   const contacts = useAppStore((s) => s.contacts);
   const activeContactId = useAppStore((s) => s.activeContactId);
   const activeContactPhone = useAppStore((s) => s.activeContactPhone);
@@ -22,6 +19,7 @@ export const VisitView: React.FC<VisitViewProps> = ({
   const goToPreviousInQueue = useAppStore((s) => s.goToPreviousInQueue);
   const recordContactActivity = useAppStore((s) => s.recordContactActivity);
   const manualUpdateContactDate = useAppStore((s) => s.manualUpdateContactDate);
+  const setIsShareOpen = useAppStore((s) => s.setIsShareOpen);
   const showToast = useAppStore((s) => s.showToast);
 
   const [isEditingDate, setIsEditingDate] = useState(false);
@@ -63,7 +61,7 @@ export const VisitView: React.FC<VisitViewProps> = ({
   };
 
   const handleOpenWhatsApp = () => {
-    onOpenShareSheetForActiveContact(null);
+    setIsShareOpen(true);
   };
 
   const handleMarkContactedNow = () => {

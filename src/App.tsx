@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import logoImg from './assets/logo.png';
 import { CrossIcon, GearIcon, UsersIcon } from './components/Icons';
 import { Toast } from './components/Toast';
-import { Verse, VERSES } from './data/verses';
 import { useAppStore } from './store/useAppStore';
 import { RandomPanel } from './features/verses/RandomPanel';
 import { NumberPanel } from './features/verses/NumberPanel';
@@ -23,14 +22,13 @@ export const App: React.FC = () => {
   const setIsConfigOpen = useAppStore((s) => s.setIsConfigOpen);
   const isQueueOpen = useAppStore((s) => s.isQueueOpen);
   const setIsQueueOpen = useAppStore((s) => s.setIsQueueOpen);
+  const isShareOpen = useAppStore((s) => s.isShareOpen);
+  const setIsShareOpen = useAppStore((s) => s.setIsShareOpen);
   const activeReport = useAppStore((s) => s.activeReport);
   const setActiveReport = useAppStore((s) => s.setActiveReport);
   const activeContactId = useAppStore((s) => s.activeContactId);
   const activeContactPhone = useAppStore((s) => s.activeContactPhone);
   const openVisit = useAppStore((s) => s.openVisit);
-
-  const [shareVerse, setShareVerse] = useState<Verse | null>(null);
-  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // Preload logo for canvas renderer
   useEffect(() => {
@@ -38,18 +36,6 @@ export const App: React.FC = () => {
   }, []);
 
   const activeContact = contacts.find((c) => c.id === activeContactId);
-
-  const handleOpenShare = (v: Verse) => {
-    setShareVerse(v);
-    setIsShareOpen(true);
-  };
-
-  const handleOpenShareForActiveContact = (verseOverride?: Verse | null) => {
-    // If verse not provided, pick first or random verse
-    const v = verseOverride || shareVerse || VERSES[0];
-    setShareVerse(v);
-    setIsShareOpen(true);
-  };
 
   return (
     <div className="wrap">
@@ -90,11 +76,7 @@ export const App: React.FC = () => {
         )}
 
         {/* Active Contact Visit Session Bar */}
-        {activeContact && (
-          <VisitView
-            onOpenShareSheetForActiveContact={handleOpenShareForActiveContact}
-          />
-        )}
+        {activeContact && <VisitView />}
       </header>
 
       {/* Tabs */}
@@ -132,9 +114,9 @@ export const App: React.FC = () => {
       </div>
 
       {/* Main Panels */}
-      {activeTab === 'random' && <RandomPanel onOpenShare={handleOpenShare} />}
-      {activeTab === 'number' && <NumberPanel onOpenShare={handleOpenShare} />}
-      {activeTab === 'custom' && <CustomPanel onOpenShare={handleOpenShare} />}
+      {activeTab === 'random' && <RandomPanel />}
+      {activeTab === 'number' && <NumberPanel />}
+      {activeTab === 'custom' && <CustomPanel />}
 
       {/* Footer */}
       <footer>
@@ -145,7 +127,6 @@ export const App: React.FC = () => {
 
       {/* Modals & Overlays */}
       <ShareSheet
-        verse={shareVerse}
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
         initialRecipientName={activeContact ? getCardName(activeContact.name) : ''}
@@ -173,4 +154,3 @@ export const App: React.FC = () => {
     </div>
   );
 };
-

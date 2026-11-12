@@ -5,17 +5,15 @@ import { Verse } from '../../data/verses';
 import { buildMessage } from '../../lib/whatsapp';
 import { useAppStore } from '../../store/useAppStore';
 
-interface CustomPanelProps {
-  onOpenShare: (verse: Verse) => void;
-}
-
-export const CustomPanel: React.FC<CustomPanelProps> = ({ onOpenShare }) => {
+export const CustomPanel: React.FC = () => {
   const showToast = useAppStore((s) => s.showToast);
+  const customVerse = useAppStore((s) => s.tabVerses.custom);
+  const setTabVerse = useAppStore((s) => s.setTabVerse);
+  const setIsShareOpen = useAppStore((s) => s.setIsShareOpen);
 
-  const [text, setText] = useState('');
-  const [ref, setRef] = useState('');
-  const [customVerse, setCustomVerse] = useState<Verse | null>(null);
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [text, setText] = useState(customVerse?.t || '');
+  const [ref, setRef] = useState(customVerse?.ref || '');
+  const [isFlipped, setIsFlipped] = useState(!!customVerse);
   const stageRef = useRef<HTMLDivElement>(null);
   const isBusyRef = useRef(false);
 
@@ -29,17 +27,19 @@ export const CustomPanel: React.FC<CustomPanelProps> = ({ onOpenShare }) => {
     if (isBusyRef.current) return;
     isBusyRef.current = true;
 
-    if (customVerse && isFlipped) {
-      setIsFlipped(false);
-      await new Promise((r) => setTimeout(r, 450));
-    }
-
     const newVerse: Verse = {
       t: trimmed,
       ref: ref.trim() || undefined
     };
 
-    setCustomVerse(newVerse);
+    // Single source of truth: commit custom verse synchronously before animation
+    setTabVerse('custom', newVerse);
+
+    if (customVerse && isFlipped) {
+      setIsFlipped(false);
+      await new Promise((r) => setTimeout(r, 450));
+    }
+
     await new Promise((r) => setTimeout(r, 80));
     setIsFlipped(true);
 
@@ -51,8 +51,9 @@ export const CustomPanel: React.FC<CustomPanelProps> = ({ onOpenShare }) => {
   };
 
   const handleCopy = async () => {
-    if (!customVerse) return;
-    const msg = buildMessage(customVerse);
+    const v = useAppStore.getState().tabVerses.custom;
+    if (!v) return;
+    const msg = buildMessage(v);
     try {
       await navigator.clipboard.writeText(msg);
       showToast('تم النسخ');
@@ -119,7 +120,7 @@ export const CustomPanel: React.FC<CustomPanelProps> = ({ onOpenShare }) => {
             <button
               type="button"
               className="btn wa"
-              onClick={() => onOpenShare(customVerse)}
+              onClick={() => setIsShareOpen(true)}
             >
               <WaIcon />
               ابعتها واتساب
@@ -134,4 +135,3 @@ export const CustomPanel: React.FC<CustomPanelProps> = ({ onOpenShare }) => {
     </section>
   );
 };
-
