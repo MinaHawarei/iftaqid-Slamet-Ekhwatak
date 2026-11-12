@@ -1,0 +1,20 @@
+{
+  "name": "افتقد سلامة اخوتك — آيات",
+  "short_name": "افتقد سلامة اخوتك",
+  "description": "تطبيق افتقاد سلامة إخوتك — كلمة من الله لكل واحد فينا — اجتماع شباب الملاك",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#15122e",
+  "theme_color": "#15122e",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "./logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
